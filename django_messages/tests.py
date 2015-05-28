@@ -30,6 +30,22 @@ class SendTestCase(TestCase):
         self.assertEqual(self.user2.received_messages.count(), 1)
         self.assertEqual(self.user2.sent_messages.count(), 0)
 
+    def test_conversation_id_is_generated(self):
+        self.assertEqual(len(str(self.msg1.conversation_id)), 36)
+
+    def test_conversion_id_differs_between_messages(self):
+        self.msg2 = Message(sender=self.user1, recipient=self.user2,
+                            subject='Other Subject', body='Body Text')
+        self.msg2.save()
+        self.assertNotEqual(self.msg1.conversation_id, self.msg2.conversation_id,
+                            'Every non-reply message should get a different conversation id')
+
+    def test_conversion_id_on_replies_is_the_same_as_in_the_message_replied_to(self):
+        self.msg2 = Message(sender=self.user1, recipient=self.user2,
+                            subject='Subject Text', body='Body Text', parent_msg=self.msg1)
+        self.msg2.save()
+        self.assertEqual(self.msg1.conversation_id, self.msg2.conversation_id, "The conversion id of a reply should be equal to the original one")
+
 
 class DeleteTestCase(TestCase):
     def setUp(self):

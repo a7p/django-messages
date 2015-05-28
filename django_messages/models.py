@@ -1,3 +1,4 @@
+import uuid
 from django.conf import settings
 from django.db import models
 from django.db.models import signals
@@ -59,6 +60,7 @@ class Message(models.Model):
     replied_at = models.DateTimeField(_("replied at"), null=True, blank=True)
     sender_deleted_at = models.DateTimeField(_("Sender deleted at"), null=True, blank=True)
     recipient_deleted_at = models.DateTimeField(_("Recipient deleted at"), null=True, blank=True)
+    conversation_id = models.CharField(verbose_name=_("Conversation ID"), max_length=36, editable=False)
 
     objects = MessageManager()
 
@@ -84,6 +86,12 @@ class Message(models.Model):
     def save(self, **kwargs):
         if not self.id:
             self.sent_at = timezone.now()
+
+        if self.parent_msg:
+            self.conversation_id = self.parent_msg.conversation_id
+        else:
+            self.conversation_id = uuid.uuid4()
+
         super(Message, self).save(**kwargs)
 
     class Meta:

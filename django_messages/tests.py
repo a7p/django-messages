@@ -1,9 +1,10 @@
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.test.client import Client
 from django.core.urlresolvers import reverse
 from django.utils import timezone
 from django_messages.models import Message
 from django_messages.utils import format_subject, format_quote
+from django.conf import settings
 
 from .utils import get_user_model
 
@@ -178,6 +179,71 @@ class IntegrationTestCase(TestCase):
             response.context['form'].initial['subject'],
             u"Re: %(subject)s" % {'subject': self.T_MESSAGE_DATA[0]['subject']}
         )
+
+    @override_settings(DJANGO_MESSAGES_PAGINATE_BY=1)
+    def test_pagination_inbox(self):
+        self.assertEqual(settings.DJANGO_MESSAGES_PAGINATE_BY, 1)
+        for r in range(2):
+            Message.objects.create(sender=self.user_1,
+                           recipient=self.user_2,
+                           subject=self.T_MESSAGE_DATA[0]['subject'],
+                           body=self.T_MESSAGE_DATA[0]['body'])
+
+        self.c.login(username=self.T_USER_DATA[1]['username'],
+                     password=self.T_USER_DATA[1]['password'])
+
+        resp = self.c.get(reverse('messages_inbox'))
+        self.assertIn('message_list_page', resp.context)
+        self.assertTrue(resp.context['message_list_page'].has_next())
+        self.assertFalse(resp.context['message_list_page'].has_previous())
+
+        resp = self.c.get("{}?page=2".format(reverse('messages_inbox')))
+        self.assertIn('message_list_page', resp.context)
+        self.assertTrue(resp.context['message_list_page'].has_previous())
+        self.assertFalse(resp.context['message_list_page'].has_next())
+
+    @override_settings(DJANGO_MESSAGES_PAGINATE_BY=1)
+    def test_pagination_outbox(self):
+        self.assertEqual(settings.DJANGO_MESSAGES_PAGINATE_BY, 1)
+        for r in range(2):
+            Message.objects.create(sender=self.user_1,
+                           recipient=self.user_2,
+                           subject=self.T_MESSAGE_DATA[0]['subject'],
+                           body=self.T_MESSAGE_DATA[0]['body'])
+
+        resp = self.c.get(reverse('messages_outbox'))
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn('message_list_page', resp.context)
+        self.assertTrue(resp.context['message_list_page'].has_next())
+        self.assertFalse(resp.context['message_list_page'].has_previous())
+
+        resp = self.c.get("{}?page=2".format(reverse('messages_outbox')))
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn('message_list_page', resp.context)
+        self.assertTrue(resp.context['message_list_page'].has_previous())
+        self.assertFalse(resp.context['message_list_page'].has_next())
+
+    @override_settings(DJANGO_MESSAGES_PAGINATE_BY=1)
+    def test_pagination_trash(self):
+        self.assertEqual(settings.DJANGO_MESSAGES_PAGINATE_BY, 1)
+        for r in range(2):
+            Message.objects.create(sender=self.user_1,
+                           recipient=self.user_2,
+                           subject=self.T_MESSAGE_DATA[0]['subject'],
+                           body=self.T_MESSAGE_DATA[0]['body'],
+                           sender_deleted_at=timezone.now())
+
+        resp = self.c.get(reverse('messages_trash'))
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn('message_list_page', resp.context)
+        self.assertTrue(resp.context['message_list_page'].has_next())
+        self.assertFalse(resp.context['message_list_page'].has_previous())
+
+        resp = self.c.get("{}?page=2".format(reverse('messages_trash')))
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn('message_list_page', resp.context)
+        self.assertTrue(resp.context['message_list_page'].has_previous())
+        self.assertFalse(resp.context['message_list_page'].has_next())
 
 
 class FormatTestCase(TestCase):

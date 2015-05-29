@@ -10,7 +10,7 @@ from django.conf import settings
 
 from django_messages.models import Message
 from django_messages.forms import ComposeForm
-from django_messages.utils import format_quote, get_user_model, get_username_field
+from django_messages.utils import format_quote, get_user_model, get_username_field, get_paginated_message_list
 
 User = get_user_model()
 
@@ -27,8 +27,10 @@ def inbox(request, template_name='django_messages/inbox.html'):
         ``template_name``: name of the template to use.
     """
     message_list = Message.objects.inbox_for(request.user)
+    message_list_page = get_paginated_message_list(request, message_list)
     return render_to_response(template_name, {
         'message_list': message_list,
+        'message_list_page': message_list_page,
     }, context_instance=RequestContext(request))
 
 @login_required
@@ -39,8 +41,10 @@ def outbox(request, template_name='django_messages/outbox.html'):
         ``template_name``: name of the template to use.
     """
     message_list = Message.objects.outbox_for(request.user)
+    message_list_page = get_paginated_message_list(request, message_list)
     return render_to_response(template_name, {
         'message_list': message_list,
+        'message_list_page': message_list_page,
     }, context_instance=RequestContext(request))
 
 @login_required
@@ -53,8 +57,10 @@ def trash(request, template_name='django_messages/trash.html'):
     by sender and recipient.
     """
     message_list = Message.objects.trash_for(request.user)
+    message_list_page = get_paginated_message_list(request, message_list)
     return render_to_response(template_name, {
         'message_list': message_list,
+        'message_list_page': message_list_page,
     }, context_instance=RequestContext(request))
 
 @login_required

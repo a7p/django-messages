@@ -1,5 +1,6 @@
 import re
 import django
+from django.core.paginator import Paginator, PageNotAnInteger, EmptyPage
 from django.utils.text import wrap
 from django.utils.translation import ugettext, ugettext_lazy as _
 from django.contrib.sites.models import Site
@@ -101,3 +102,16 @@ def get_username_field():
         return get_user_model().USERNAME_FIELD
     else:
         return 'username'
+
+
+def get_paginated_message_list(request, message_list):
+    paginate_by = getattr(settings, 'DJANGO_MESSAGES_PAGINATE_BY', False) or 10
+    paginator = Paginator(message_list, paginate_by)
+    page = request.GET.get('page')
+    try:
+        message_list_paginated = paginator.page(page)
+    except PageNotAnInteger:
+        message_list_paginated = paginator.page(1)
+    except EmptyPage:
+        message_list_paginated = paginator.page(paginator.num_pages)
+    return message_list_paginated

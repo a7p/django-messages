@@ -70,6 +70,11 @@ extend a template called ``base.html`` and only emit stuff in the block
 ``content`` and block ``sidebar``. You may want to use your own templates,
 but the included ones are good enough for testing and getting started.
 
+The templates containing a list get an additional context variable
+containing the a paginated ``message_list``, it's named
+``message_list_page``. The number of elements per page can be configured
+via the Django setting ``DJANGO_MESSAGES_PAGINATE_BY``, default is 10.
+
 
 Dependencies
 ------------

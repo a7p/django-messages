@@ -1,3 +1,4 @@
+from django.db.models import F
 from django.http import Http404, HttpResponseRedirect
 from django.shortcuts import render_to_response, get_object_or_404
 from django.template import RequestContext
@@ -8,7 +9,7 @@ from django.utils import timezone
 from django.core.urlresolvers import reverse
 from django.conf import settings
 
-from django_messages.models import Message
+from django_messages.models import Message, Conversation
 from django_messages.forms import ComposeForm
 from django_messages.utils import format_quote, get_user_model, get_username_field, get_paginated_message_list
 
@@ -62,6 +63,30 @@ def trash(request, template_name='django_messages/trash.html'):
         'message_list': message_list,
         'message_list_page': message_list_page,
     }, context_instance=RequestContext(request))
+
+def conversations(request, template_name='django_messages/conversations.html'):
+    """
+    Displays a list of all conversations not marked as deleted
+    Optional arguments:
+        ``template_name``: name fo the template to use
+        ``collapse``: only show the latest messages of a conversation
+    """
+    message_list = Message.objects.conversations_for(request.user)
+    message_list_page = get_paginated_message_list(request, message_list)
+    return render_to_response(template_name, {
+        'message_list': message_list,
+        'message_list_page': message_list_page,
+    }, context_instance=RequestContext(request))
+
+
+def conversations_trash(request, template_name='django_messages/conversations_trash.html'):
+    message_list = Message.objects.conversations_trash_for(request.user)
+    message_list_page = get_paginated_message_list(request, message_list)
+    return render_to_response(template_name, {
+        'message_list': message_list,
+        'message_list_page': message_list_page,
+    }, context_instance=RequestContext(request))
+
 
 @login_required
 def compose(request, recipient=None, form_class=ComposeForm,
@@ -169,6 +194,55 @@ def delete(request, message_id, success_url=None):
     raise Http404
 
 @login_required
+def delete_conversation(request, conversation_id, success_url=None):
+    """
+    Marks a conversation as deleted (this triggers the deletion of all messages
+    part of the conversation for the user. The conversation is not removed from the
+    db, but only marked as deleted.
+
+    You can pass ?next=/foo/bar/ via the url to redirect the user to a different
+    page (e.g. `/foo/bar/`) than ``success_url`` after deletion of the message.
+    """
+    user = request.user
+    now = timezone.now()
+    conversation = get_object_or_404(Conversation, conversation_id=conversation_id, user=user)
+    if success_url is None:
+        success_url = reverse('messages_conversations')
+
+    if 'next' in request.GET:
+        success_url = request.GET['next']
+
+    conversation.mark_as_deleted()
+    if notification:
+        notification.send([user], "messages_deleted", {'message': conversation,})
+    return HttpResponseRedirect(success_url)
+
+@login_required
+def undelete_conversation(request, conversation_id, success_url=None):
+    """
+    Marks a conversation as deleted (this triggers the deletion of all messages
+    part of the conversation for the user. The conversation is not removed from the
+    db, but only marked as deleted.
+
+    You can pass ?next=/foo/bar/ via the url to redirect the user to a different
+    page (e.g. `/foo/bar/`) than ``success_url`` after deletion of the message.
+    """
+    user = request.user
+    now = timezone.now()
+    conversation = get_object_or_404(Conversation, conversation_id=conversation_id, user=user)
+
+    if success_url is None:
+        success_url = reverse('messages_conversations_trash')
+
+    if 'next' in request.GET:
+        success_url = request.GET['next']
+
+    conversation.mark_as_undeleted()
+    # if notification:
+    #     notification.send([user], "messages_recovered", {'message': conversation,})
+    return HttpResponseRedirect(success_url)
+
+@login_required
 def undelete(request, message_id, success_url=None):
     """
     Recovers a message from trash. This is achieved by removing the
@@ -218,7 +292,11 @@ def view(request, message_id, form_class=ComposeForm, quote_helper=format_quote,
         message.read_at = now
         message.save()
 
-    context = {'message': message, 'reply_form': None}
+    messages_of_conversation = Message.objects.users_conversation(user, message.conversation_id)
+
+    context = {'message': message,
+               'messages_of_conversation': messages_of_conversation,
+               'reply_form': None}
     if message.recipient == user:
         form = form_class(initial={
             'body': quote_helper(message.sender, message.body),
@@ -227,4 +305,43 @@ def view(request, message_id, form_class=ComposeForm, quote_helper=format_quote,
             })
         context['reply_form'] = form
     return render_to_response(template_name, context,
-        context_instance=RequestContext(request))
+                              context_instance=RequestContext(request))
+
+
+@login_required
+def conversation_view(request, conversation_id, form_class=ComposeForm, quote_helper=format_quote,
+        subject_template=_(u"Re: %(subject)s"),
+        template_name='django_messages/view.html'):
+    """
+    Shows a conversation.``conversation_id`` argument is required.
+    If there are no messages in a conversation for the user, a 404 is raised.
+    All messages the user is the recipient of, which are unread and part of the
+    conversation ``read_at`` is set to the current datetime.
+    If the user is the recipient of the latest message a reply form will be
+    added to the tenplate context, otherwise 'reply_form' will be None.
+    """
+    user = request.user
+    now = timezone.now()
+
+    messages_of_conversation = Message.objects.users_conversation(user, conversation_id)
+    if messages_of_conversation.count() == 0:
+        raise Http404
+
+    for message in messages_of_conversation:
+        if user == message.recipient and message.read_at is None:
+            message.read_at = now
+            message.save()
+
+    context = {'messages_of_conversation': messages_of_conversation,
+               'reply_form': None}
+
+    latest_message = messages_of_conversation.latest('sent_at')
+    if latest_message.recipient == user:
+        form = form_class(initial={
+            'body': quote_helper(latest_message.sender, latest_message.body),
+            'subject': subject_template % {'subject': message.subject},
+            'recipient': [message.sender,]
+            })
+        context['reply_form'] = form
+    return render_to_response(template_name, context,
+                              context_instance=RequestContext(request))

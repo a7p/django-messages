@@ -1,3 +1,4 @@
+from uuid import uuid4
 from django import forms
 from django.conf import settings
 from django.utils.translation import ugettext_lazy as _
@@ -33,12 +34,14 @@ class ComposeForm(forms.Form):
         subject = self.cleaned_data['subject']
         body = self.cleaned_data['body']
         message_list = []
+        conversation_id = parent_msg.conversation_id if parent_msg else uuid4()
         for r in recipients:
             msg = Message(
                 sender = sender,
                 recipient = r,
                 subject = subject,
                 body = body,
+                conversation_id=conversation_id,
             )
             if parent_msg is not None:
                 msg.parent_msg = parent_msg

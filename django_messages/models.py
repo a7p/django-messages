@@ -1,7 +1,7 @@
 import uuid
 from django.conf import settings
-from django.db import models
-from django.db.models import signals
+from django.db import models, transaction
+from django.db.models import signals, Q
 from django.utils import timezone
 from django.utils.encoding import python_2_unicode_compatible
 from django.utils.translation import ugettext_lazy as _
@@ -44,6 +44,15 @@ class MessageManager(models.Manager):
             sender_deleted_at__isnull=False,
         )
 
+    def conversations_for(self, user):
+        return self.filter(conversation__user=user, conversation__marked_as_deleted=False)
+
+    def conversations_trash_for(self, user):
+        return self.filter(conversation__user=user).filter(conversation__marked_as_deleted=True)
+
+    def users_conversation(self, user, conversation_id):
+        return self.filter(Q(sender=user) | Q(recipient=user), conversation_id=conversation_id)
+
 
 @python_2_unicode_compatible
 class Message(models.Model):
@@ -83,22 +92,77 @@ class Message(models.Model):
         return ('messages_detail', [self.id])
     get_absolute_url = models.permalink(get_absolute_url)
 
+    @transaction.atomic
     def save(self, **kwargs):
+        created = False
+        update_conversation = kwargs.pop('update_conversations', False)
         if not self.id:
             self.sent_at = timezone.now()
+            created = True
 
-        if self.parent_msg:
+        if self.conversation_id:
+            pass
+        elif self.parent_msg:
             self.conversation_id = self.parent_msg.conversation_id
         else:
             self.conversation_id = uuid.uuid4()
 
         super(Message, self).save(**kwargs)
 
+        if created or update_conversation:
+            for user in [self.sender, self.recipient]:
+                # with multiple recipients ComposeForm causes multiple updates for the sender of a message,
+                # this cannot be avoided with reasonable effort
+                c, new = Conversation.objects.get_or_create(conversation_id=self.conversation_id,
+                                                            user=user,
+                                                            defaults={'latest_message': self})
+                if not new:
+                    c.latest_message = self
+                    c.mark_as_undeleted()
+                    c.save()
+
     class Meta:
         ordering = ['-sent_at']
         verbose_name = _("Message")
         verbose_name_plural = _("Messages")
 
+
+class Conversation(models.Model):
+    latest_message = models.ForeignKey('Message')
+    user = models.ForeignKey(AUTH_USER_MODEL, null=True, blank=True, verbose_name=_("Conversation Owner"))
+    conversation_id = models.CharField(verbose_name=_("Conversation ID"), max_length=36, editable=False)
+    marked_as_deleted = models.BooleanField(default=False)  # will be set to false if a new message in the conversation is send.
+
+    class Meta:
+        unique_together = ('user', 'conversation_id')
+
+    @transaction.atomic
+    def mark_as_deleted(self):
+        """
+        deleting a conversation marks all messages that are part of this conversation as deleted for the user
+        """
+        self.marked_as_deleted = True
+        for m in Message.objects.filter(Q(sender=self.user) | Q(recipient=self.user),
+                                        conversation_id=self.conversation_id):
+            now = timezone.now()
+            if m.sender == self.user:
+                m.sender_deleted_at = now if m.sender_deleted_at is None else m.sender_deleted_at
+            else:
+                m.recipient_deleted_at = now if m.recipient_deleted_at is None else m.recipient_deleted_at
+            m.save()
+        self.save()
+
+    @transaction.atomic
+    def mark_as_undeleted(self):
+        self.marked_as_deleted = False
+        for m in Message.objects.filter(Q(sender=self.user) | Q(recipient=self.user),
+                                        conversation_id=self.conversation_id):
+            if m.sender == self.user:
+                m.sender_deleted_at = None
+            else:
+                m.recipient_deleted_at = None
+            m.save()
+        self.save()
 
 def inbox_count_for(user):
     """

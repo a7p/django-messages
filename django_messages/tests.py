@@ -1,11 +1,13 @@
+import datetime
+from django.db.models import Q, Max, F
 from django.test import TestCase, override_settings
 from django.test.client import Client
 from django.core.urlresolvers import reverse
 from django.utils import timezone
-from django_messages.models import Message
+from django_messages.forms import ComposeForm
+from django_messages.models import Message, Conversation
 from django_messages.utils import format_subject, format_quote
 from django.conf import settings
-
 from .utils import get_user_model
 
 User = get_user_model()
@@ -244,6 +246,95 @@ class IntegrationTestCase(TestCase):
         self.assertIn('message_list_page', resp.context)
         self.assertTrue(resp.context['message_list_page'].has_previous())
         self.assertFalse(resp.context['message_list_page'].has_next())
+
+
+class TestOrmBehavior(TestCase):
+    def setUp(self):
+        self.user1 = User.objects.create_user(
+            'user1', 'user1@example.com', '123456')
+        self.user2 = User.objects.create_user(
+            'user2', 'user2@example.com', '123456')
+
+        parent_msg = None
+        for n in range(10):
+            user_a, user_b = (self.user1, self.user2) if n % 2 else (self.user2, self.user1)
+            m = Message.objects.create(sender=user_a,
+                           recipient=user_b,
+                           subject="{}: {}".format(n, " subject"),
+                           body="{}: {}".format(n, " body"),
+                           sent_at=timezone.now() - datetime.timedelta(days=100) + datetime.timedelta(seconds=10) * n,
+                           parent_msg=parent_msg)
+            m.save()
+            self.newest_msg1 = m
+            parent_msg = m
+
+        for n in range(10):
+            user_a, user_b = (self.user1, self.user2) if n % 2 else (self.user2, self.user1)
+            m = Message.objects.create(sender=user_a,
+                           recipient=user_b,
+                           subject="{}: {}".format(n, " subject"),
+                           body="{}: {}".format(n, " body"),
+                           sent_at=timezone.now() - datetime.timedelta(days=100) + datetime.timedelta(seconds=10) * n)
+            m.save()
+            self.newest_msg2 = m
+
+    def test_distinct_group_by_combination(self):
+        pass
+        # self.assertEqual(Message.objects.order_by('conversation_id', '-sent_at').distinct('conversation_id').count(), 11)  # ze Posgres version
+        # conversation_ids = Message.objects.filter(Q(sender=self.user1) | Q(recipient=self.user1)).values('conversation_id').distinct()
+        # conversation_ids = Message.objects.filter(Q(sender=self.user1) | Q(recipient=self.user1)).annotate(most_recent=Max('sent_at'))
+        # conversation_ids = Message.objects.filter(Q(sender=self.user1) | Q(recipient=self.user1)).values('conversation_id').order_by().distinct()
+        # conversation_ids = [elem['conversation_id'] for elem in conversation_ids]
+        # self.assertEqual(conversation_ids.count(), 11)
+        # self.assertEqual(len(conversation_ids), 11)
+        # conversation_ids = [c['conversation_id'] for c in conversation_ids]
+        # ms = Message.objects.filter(conversation_id__in=conversation_ids)
+        # res = set()
+        # for id_ in conversation_ids:
+        #     newest = Message.objects.filter(conversation_id=id_).order_by('-sent_at').first()
+        #     newest2 = Message.objects.filter(conversation_id=id_).latest('sent_at')
+            # newest2 = Message.objects.filter(conversation_id=id_).aggregate(Max('sent_at'))
+            # self.assertEqual(newest, newest2)
+            # res.add(newest)
+
+        # res2 = Message.objects.annotate(max_date=Max('sent_at')).filter(sent_at=F('max_date'))
+        # self.assertEqual(conversation_ids, 0)
+        # q = 'SELECT * FROM django_messages_message WHERE conversation_id IN ("1","2","3","4") GROUP BY conversation_id HAVING MAX(sent_at)', [conversation_ids[0],]
+        # res2 = Message.objects.raw(q)
+        # for p in res2:
+        #     self.assertEqual(p, 10)
+        # self.assertEqual(res2, 11)
+        # newest = Message.objects.filter(Q(sender=self.user1) | Q(recipient=self.user1)).filter(conversation_ids__in=conversation_ids)
+        # self.assertEqual(len(conversation_ids), 11)
+
+
+class TestConversation(TestCase):
+    def setUp(self):
+        self.user1, self.user2, self.user3 = User.objects.create_user('user1', 'user1@example.com', '123456'),\
+                                             User.objects.create_user('user2', 'user2@example.com', '123456'),\
+                                             User.objects.create_user('user3', 'user3@example.com', '123456')
+
+    def test_conversation_is_updated(self):
+        """There should be only one Conversion Object for each user for each conversation.
+        The Conversion should always be updated to the latest message with which the user had contact (either as
+        recipient or as sender)
+        """
+        parent_msg = None
+        for n in range(20):
+            user_a, user_b, user_c = (self.user1, self.user2, self.user3) if n % 3 else (self.user2, self.user1, self.user3)
+            f = ComposeForm({"recipient":[user_b, user_c],
+                            "subject":'asdf',
+                            "body":'bsdf'}
+                            )
+            f.is_valid()
+            m = f.save(user_a, parent_msg=parent_msg)
+            parent_msg = m[-1]
+            user_a.latest = m[-1].sent_at
+            user_a.conversation_id = m[-1].conversation_id
+
+        self.assertEqual(Conversation.objects.all().count(), 3)
+        self.assertEqual(Conversation.objects.get(user=user_a, conversation_id=user_a.conversation_id)\
+                         .latest_message.sent_at, user_a.latest)
 
 
 class FormatTestCase(TestCase):

@@ -1,4 +1,3 @@
-import uuid
 from django.conf import settings
 from django.db import models, transaction
 from django.db.models import signals, Q
@@ -95,6 +94,7 @@ class Message(models.Model):
     @transaction.atomic
     def save(self, **kwargs):
         creating = False
+        updating_conversation = kwargs.pop('update_conversation', False)
         if not self.id:
             self.sent_at = timezone.now()
             creating = True
@@ -110,7 +110,7 @@ class Message(models.Model):
 
         super(Message, self).save(**kwargs)
 
-        if creating:
+        if creating or updating_conversation:
             for user in [self.sender, self.recipient]:
                 # with multiple recipients ComposeForm causes multiple updates for the sender of a message,
                 # this cannot be avoided with reasonable effort

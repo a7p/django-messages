@@ -9,7 +9,7 @@ if "notification" in settings.INSTALLED_APPS and getattr(settings, 'DJANGO_MESSA
 else:
     notification = None
 
-from django_messages.models import Message
+from django_messages.models import Message, Conversation
 from django_messages.fields import CommaSeparatedUserField
 
 class ComposeForm(forms.Form):
@@ -34,14 +34,21 @@ class ComposeForm(forms.Form):
         subject = self.cleaned_data['subject']
         body = self.cleaned_data['body']
         message_list = []
-        conversation_id = parent_msg.conversation_id if parent_msg else uuid4()
+
+        if parent_msg:
+            conversation_id = parent_msg.conversation_id
+        else:
+            conversation = Conversation()
+            conversation.save()
+            conversation_id = conversation.pk
+
         for r in recipients:
             msg = Message(
                 sender = sender,
                 recipient = r,
                 subject = subject,
                 body = body,
-                conversation_id=conversation_id,
+                conversation_id = conversation_id,
             )
             if parent_msg is not None:
                 msg.parent_msg = parent_msg

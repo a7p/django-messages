@@ -44,14 +44,14 @@ class MessageManager(models.Manager):
             sender_deleted_at__isnull=False,
         )
 
-    def conversations_for(self, user):
+    def conversation_for(self, user):
         return self.filter(conversation__user=user, conversation__marked_as_deleted=False)
 
     def conversations_trash_for(self, user):
         return self.filter(conversation__user=user).filter(conversation__marked_as_deleted=True)
 
-    def users_conversation(self, user, conversation_id):
-        return self.filter(Q(sender=user) | Q(recipient=user), conversation_id=conversation_id)
+    def users_conversation(self, user, conversation):
+        return self.filter(Q(sender=user) | Q(recipient=user), conversation=conversation)
 
 
 @python_2_unicode_compatible
@@ -69,7 +69,7 @@ class Message(models.Model):
     replied_at = models.DateTimeField(_("replied at"), null=True, blank=True)
     sender_deleted_at = models.DateTimeField(_("Sender deleted at"), null=True, blank=True)
     recipient_deleted_at = models.DateTimeField(_("Recipient deleted at"), null=True, blank=True)
-    conversation_id = models.CharField(verbose_name=_("Conversation ID"), max_length=36, editable=False)
+    conversation = models.ForeignKey('Conversation', null=True, blank=True, verbose_name=_('Conversation'))
 
     objects = MessageManager()
 
@@ -94,28 +94,29 @@ class Message(models.Model):
 
     @transaction.atomic
     def save(self, **kwargs):
-        created = False
-        update_conversation = kwargs.pop('update_conversations', False)
+        creating = False
         if not self.id:
             self.sent_at = timezone.now()
-            created = True
+            creating = True
 
         if self.conversation_id:
             pass
         elif self.parent_msg:
             self.conversation_id = self.parent_msg.conversation_id
         else:
-            self.conversation_id = uuid.uuid4()
+            conversation = Conversation()
+            conversation.save()
+            self.conversation_id = conversation.pk
 
         super(Message, self).save(**kwargs)
 
-        if created or update_conversation:
+        if creating:
             for user in [self.sender, self.recipient]:
                 # with multiple recipients ComposeForm causes multiple updates for the sender of a message,
                 # this cannot be avoided with reasonable effort
-                c, new = Conversation.objects.get_or_create(conversation_id=self.conversation_id,
-                                                            user=user,
-                                                            defaults={'latest_message': self})
+                c, new = ConversationHead.objects.get_or_create(conversation_id=self.conversation_id,
+                                                                user=user,
+                                                                defaults={'latest_message': self})
                 if not new:
                     c.latest_message = self
                     c.mark_as_undeleted()
@@ -127,14 +128,14 @@ class Message(models.Model):
         verbose_name_plural = _("Messages")
 
 
-class Conversation(models.Model):
+class ConversationHead(models.Model):
     latest_message = models.ForeignKey('Message')
     user = models.ForeignKey(AUTH_USER_MODEL, null=True, blank=True, verbose_name=_("Conversation Owner"))
-    conversation_id = models.CharField(verbose_name=_("Conversation ID"), max_length=36, editable=False)
+    conversation = models.ForeignKey('Conversation', related_name='+')
     marked_as_deleted = models.BooleanField(default=False)  # will be set to false if a new message in the conversation is send.
 
     class Meta:
-        unique_together = ('user', 'conversation_id')
+        unique_together = ('user', 'conversation')
 
     @transaction.atomic
     def mark_as_deleted(self):
@@ -143,7 +144,7 @@ class Conversation(models.Model):
         """
         self.marked_as_deleted = True
         for m in Message.objects.filter(Q(sender=self.user) | Q(recipient=self.user),
-                                        conversation_id=self.conversation_id):
+                                        conversation=self.conversation):
             now = timezone.now()
             if m.sender == self.user:
                 m.sender_deleted_at = now if m.sender_deleted_at is None else m.sender_deleted_at
@@ -156,7 +157,7 @@ class Conversation(models.Model):
     def mark_as_undeleted(self):
         self.marked_as_deleted = False
         for m in Message.objects.filter(Q(sender=self.user) | Q(recipient=self.user),
-                                        conversation_id=self.conversation_id):
+                                        conversation=self.conversation):
             if m.sender == self.user:
                 m.sender_deleted_at = None
             else:
@@ -164,12 +165,22 @@ class Conversation(models.Model):
             m.save()
         self.save()
 
+
+class Conversation(models.Model):
+    """
+    Foreign keys are pointing to this
+    A Conversation 'contains' all messages belonging to one 'thread' -> they all point to the same conversation-object
+    """
+    pass
+
+
 def inbox_count_for(user):
     """
     returns the number of unread messages for the given user but does not
     mark them seen
     """
     return Message.objects.filter(recipient=user, read_at__isnull=True, recipient_deleted_at__isnull=True).count()
+
 
 # fallback for email notification if django-notification could not be found
 if "notification" not in settings.INSTALLED_APPS and getattr(settings, 'DJANGO_MESSAGES_NOTIFY', True):

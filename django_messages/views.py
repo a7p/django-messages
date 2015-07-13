@@ -9,7 +9,7 @@ from django.utils import timezone
 from django.core.urlresolvers import reverse
 from django.conf import settings
 
-from django_messages.models import Message, Conversation
+from django_messages.models import Message, ConversationHead
 from django_messages.forms import ComposeForm
 from django_messages.utils import format_quote, get_user_model, get_username_field, get_paginated_message_list
 
@@ -71,7 +71,7 @@ def conversations(request, template_name='django_messages/conversations.html'):
         ``template_name``: name fo the template to use
         ``collapse``: only show the latest messages of a conversation
     """
-    message_list = Message.objects.conversations_for(request.user)
+    message_list = Message.objects.conversations_head_for(request.user)
     message_list_page = get_paginated_message_list(request, message_list)
     return render_to_response(template_name, {
         'message_list': message_list,
@@ -205,7 +205,7 @@ def delete_conversation(request, conversation_id, success_url=None):
     """
     user = request.user
     now = timezone.now()
-    conversation = get_object_or_404(Conversation, conversation_id=conversation_id, user=user)
+    conversation = get_object_or_404(ConversationHead, conversation_id=conversation_id, user=user)
     if success_url is None:
         success_url = reverse('messages_conversations')
 
@@ -229,7 +229,7 @@ def undelete_conversation(request, conversation_id, success_url=None):
     """
     user = request.user
     now = timezone.now()
-    conversation = get_object_or_404(Conversation, conversation_id=conversation_id, user=user)
+    conversation = get_object_or_404(ConversationHead, conversation_id=conversation_id, user=user)
 
     if success_url is None:
         success_url = reverse('messages_conversations_trash')

@@ -64,21 +64,21 @@ def trash(request, template_name='django_messages/trash.html'):
         'message_list_page': message_list_page,
     }, context_instance=RequestContext(request))
 
+@login_required
 def conversations(request, template_name='django_messages/conversations.html'):
     """
     Displays a list of all conversations not marked as deleted
     Optional arguments:
         ``template_name``: name fo the template to use
-        ``collapse``: only show the latest messages of a conversation
     """
-    message_list = Message.objects.conversations_head_for(request.user)
+    message_list = Message.objects.conversation_heads_for(request.user)
     message_list_page = get_paginated_message_list(request, message_list)
     return render_to_response(template_name, {
         'message_list': message_list,
         'message_list_page': message_list_page,
     }, context_instance=RequestContext(request))
 
-
+@login_required
 def conversations_trash(request, template_name='django_messages/conversations_trash.html'):
     message_list = Message.objects.conversations_trash_for(request.user)
     message_list_page = get_paginated_message_list(request, message_list)
@@ -86,7 +86,6 @@ def conversations_trash(request, template_name='django_messages/conversations_tr
         'message_list': message_list,
         'message_list_page': message_list_page,
     }, context_instance=RequestContext(request))
-
 
 @login_required
 def compose(request, recipient=None, form_class=ComposeForm,

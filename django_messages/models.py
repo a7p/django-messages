@@ -44,13 +44,16 @@ class MessageManager(models.Manager):
         )
 
     def conversation_for(self, user):
-        return self.filter(conversation__user=user, conversation__marked_as_deleted=False)
+        return self.filter(conversation__user=user, conversationhead__marked_as_deleted=False)
 
     def conversations_trash_for(self, user):
-        return self.filter(conversation__user=user).filter(conversation__marked_as_deleted=True)
+        return self.filter(conversation__user=user).filter(conversationhead__marked_as_deleted=True)
 
     def users_conversation(self, user, conversation):
         return self.filter(Q(sender=user) | Q(recipient=user), conversation=conversation)
+
+    def conversation_heads_for(self, user):
+        return self.filter(conversationhead__user=user).filter(conversationhead__marked_as_deleted=False)
 
 
 @python_2_unicode_compatible

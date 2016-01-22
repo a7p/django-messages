@@ -96,17 +96,21 @@ class Message(models.Model):
 
     @transaction.atomic
     def save(self, **kwargs):
-        creating = False
         updating_conversation = kwargs.pop('update_conversation', False)
         if not self.id:
             self.sent_at = timezone.now()
             creating = True
+        else:
+            creating = False
 
         if self.conversation_id:
+            # it's an update
             pass
         elif self.parent_msg:
+            # it's newly created but has a parent -> belongs to the same conversation
             self.conversation_id = self.parent_msg.conversation_id
         else:
+            # it's newly created and has no parents
             conversation = Conversation()
             conversation.save()
             self.conversation_id = conversation.pk
@@ -121,8 +125,8 @@ class Message(models.Model):
                                                                 user=user,
                                                                 defaults={'latest_message': self})
                 if not new:
-                    c.latest_message = self
-                    c.mark_as_undeleted()
+                    c.latest_message = self  # warum nicht immer
+                    c.mark_as_undeleted()  # warum?
                     c.save()
 
     class Meta:

@@ -118,7 +118,7 @@ class Message(models.Model):
         super(Message, self).save(**kwargs)
 
         if creating or updating_conversation:
-            for user in [self.sender, self.recipient]:
+            for user in (self.sender, self.recipient):
                 # with multiple recipients ComposeForm causes multiple updates for the sender of a message,
                 # this cannot be avoided with reasonable effort
                 c, new = ConversationHead.objects.get_or_create(conversation_id=self.conversation_id,
@@ -136,6 +136,10 @@ class Message(models.Model):
 
 
 class ConversationHead(models.Model):
+    """
+    Points to the latest message in a Conversation.
+    There is one ConversationHead per User - this is suboptimal, but inverting the relationship is not an option
+    """
     latest_message = models.ForeignKey('Message')
     user = models.ForeignKey(AUTH_USER_MODEL, null=True, blank=True, verbose_name=_("Conversation Owner"))
     conversation = models.ForeignKey('Conversation', related_name='+')
@@ -143,6 +147,15 @@ class ConversationHead(models.Model):
 
     class Meta:
         unique_together = ('user', 'conversation')
+
+    def __repr__(self):
+        return "<id: %s latest_message_id: %s user_id: %s conversation_id: %s, marked_as_deleted: %s>" % (
+            self.id,
+            self.latest_message_id,
+            self.user_id,
+            self.conversation_id,
+            self.marked_as_deleted,
+        )
 
     @transaction.atomic
     def mark_as_deleted(self):

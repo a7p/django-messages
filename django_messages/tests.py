@@ -299,6 +299,24 @@ class ConversationTestCase(TestCase):
         self.assertEqual(chs[1].latest_message.subject, ms2[0].subject)
         self.assertEqual(chs[2].latest_message.subject, ms2[0].subject)
 
+    def test_conversation_head_for(self):
+        f = ComposeForm({"recipient": [self.user2, self.user3],
+                         "subject": 'SUBJECT',
+                         "body": 'BODY'})
+        f.is_valid()
+        ms = f.save(self.user1)
+
+        f = ComposeForm({"recipient": [self.user1, self.user3],
+                         "subject": "SUBJECT 2",
+                         "body": "BODY 2"
+                         })
+        f.is_valid()
+        f.save(self.user2, parent_msg=ms[0])
+
+        ms3 = Message.objects.conversation_heads_for(self.user1)
+        self.assertEqual(ms3.count(), 1)
+
+
 
 class FormatTestCase(TestCase):
     """ some tests for helper functions """

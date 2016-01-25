@@ -53,7 +53,7 @@ class MessageManager(models.Manager):
         return self.filter(Q(sender=user) | Q(recipient=user), conversation=conversation)
 
     def conversation_heads_for(self, user):
-        return self.filter(conversationhead__user=user).filter(conversationhead__marked_as_deleted=False)
+        return self.filter(conversationhead__user=user, conversationhead__marked_as_deleted=False)
 
 
 @python_2_unicode_compatible

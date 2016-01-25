@@ -256,63 +256,48 @@ class ConversationTestCase(TestCase):
         self.user2.save()
         self.user3.save()
 
-    def test_conversation_head_is_created(self):
-        f = ComposeForm({"recipient": [self.user1],
+    def test_conversation_head_is_created_one_recipient(self):
+        f = ComposeForm({"recipient": [self.user2],
                          "subject": 'subject',
                          "body": 'body'})
         f.is_valid()
         m = f.save(self.user1)
-        self.assertEqual(ConversationHead.objects.count(), 1)
+        self.assertEqual(ConversationHead.objects.count(), 2)
         self.assertEqual(Conversation.objects.count(), 1)
 
-    def skip_test_conversation_is_updated(self):
+    def test_conversation_head_is_created_two_recipients(self):
+        f = ComposeForm({"recipient": [self.user2, self.user3],
+                         "subject": 'subject',
+                         "body": 'body'})
+        f.is_valid()
+        m = f.save(self.user1)
+        self.assertEqual(ConversationHead.objects.count(), 3)
+        self.assertEqual(Conversation.objects.count(), 1)
+
+    def test_conversation_is_updated(self):
         """There should be only one ConversionHead Object for each user for each conversation.
         The Conversion should always be updated to the latest message with which the user had contact (either as
         recipient or as sender)
         """
-        parent_msg = None
-        for n in range(20):
-            user_a, user_b, user_c = (self.user1, self.user2, self.user3) if n % 2 else (
-                self.user2, self.user1, self.user3)
-            f = ComposeForm({"recipient": [user_b, user_c],
-                             "subject": ' subject & a more {}'.format(n),
-                             "body": 'body & more'})
-            f.is_valid()
-            m = f.save(user_a, parent_msg=parent_msg)
-            parent_msg = m[-1]
-            user_a.latest = m[-1].sent_at
-            user_a.conversation_id = m[-1].conversation_id
+        f = ComposeForm({"recipient": [self.user2, self.user3],
+                         "subject": 'SUBJECT',
+                         "body": 'BODY'})
+        f.is_valid()
+        ms = f.save(self.user1)
 
-        self.assertEqual(ConversationHead.objects.all().count(), 3)
-        self.assertEqual(ConversationHead.objects.get(user=user_a, conversation_id=user_a.conversation_id)
-                         .latest_message.sent_at, user_a.latest)
+        f = ComposeForm({"recipient": [self.user1, self.user3],
+                         "subject": "SUBJECT 2",
+                         "body": "BODY 2"
+                         })
+        f.is_valid()
+        ms2 = f.save(self.user2, parent_msg=ms[0])
 
-        # for ch in ConversationHead.objects.all():
-            # latest_message_of_user = Message.objects.filter(
-            # ).latest('sent_at')
-            # self.assertEqual(ch.lastest_message.pk, latest_message_of_user.pk)
-            # self.assertEqual(ch.latest_message.sent_at, user_a.latest)
+        chs = ConversationHead.objects.all()
+        self.assertEqual(chs.count(), 3)
 
-    def skip_test_get_conversation_head(self):
-        parent_msg = None
-        for n in range(1, 4):
-            user_a, user_b, user_c = (self.user1, self.user2, self.user3) if n % 2 else (self.user2, self.user1, self.user3)
-            f = ComposeForm({"recipient": [user_b, user_c], "subject": ' subject & a more', "body": 'body & more'})
-            f.is_valid()
-            m = f.save(user_a, parent_msg=parent_msg)
-            parent_msg = m[-1]
-            user_a.latest = m[-1].sent_at
-            user_a.conversation_id = m[-1].conversation_id
-
-        ms = Message.objects.conversation_heads_for(self.user1)
-        # import pdb
-        # pdb.set_trace()
-
-        self.assertEqual(len(ms), 1)
-
-        latest_message_by_user1 = Message.objects.filter(sender=self.user1).latest('sent_at')
-        self.assertEqual(ms[0].pk, latest_message_by_user1.pk)
-        self.assertTrue(False)
+        self.assertEqual(chs[0].latest_message.subject, ms2[0].subject)
+        self.assertEqual(chs[1].latest_message.subject, ms2[0].subject)
+        self.assertEqual(chs[2].latest_message.subject, ms2[0].subject)
 
 
 class FormatTestCase(TestCase):

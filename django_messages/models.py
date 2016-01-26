@@ -47,7 +47,7 @@ class MessageManager(models.Manager):
         return self.filter(conversation__user=user, conversationhead__marked_as_deleted=False)
 
     def conversations_trash_for(self, user):
-1        return self.filter(conversationhead__user=user, conversationhead__marked_as_deleted=True)
+        return self.filter(conversationhead__user=user, conversationhead__marked_as_deleted=True)
 
     def users_conversation(self, user, conversation):
         return self.filter(Q(sender=user) | Q(recipient=user), conversation=conversation)
